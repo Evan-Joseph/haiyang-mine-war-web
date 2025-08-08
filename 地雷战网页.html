@@ -1089,9 +1089,9 @@
         // 播放背景音乐
         function playBackgroundMusic() {
             if (!bgAudio) {
-                // 如果没有上传背景音乐，使用默认音乐
+                // 如果没有上传背景音乐，使用仓库内本地 BGM
                 bgAudio = new Audio();
-                bgAudio.src = 'https://cdn.jsdelivr.net/gh/webfronts/js-assets@main/mine-war-theme.mp3';
+                bgAudio.src = 'bgm.mp3';
                 bgAudio.loop = true;
                 applyBgVolume();
             }
@@ -1122,6 +1122,7 @@
         // 绑定按钮事件
         playBgBtn.addEventListener('click', playBackgroundMusic);
         pauseBgBtn.addEventListener('click', pauseBackgroundMusic);
+
         // 背景音乐音量/静音
         function applyBgVolume() {
             if (!bgAudio) return;
@@ -1131,9 +1132,11 @@
             }
             bgAudio.volume = effective;
         }
+
         function updateBgVolumeLabel() {
             bgVolumeLabel.textContent = `音量：${Math.round(bgBaseVolume * 100)}%`;
         }
+
         if (muteBgBtn && bgVolumeSlider) {
             muteBgBtn.addEventListener('click', function() {
                 isBgMuted = !isBgMuted;
@@ -1152,7 +1155,7 @@
                 }
             });
         }
-        
+
         // 音频上传功能 - 历史声音
         const uploadAudioBtn = document.getElementById('upload-audio-btn');
         const audioUploadInput = document.getElementById('audio-upload-input');
@@ -1198,45 +1201,48 @@
                     stopReadingHistory();
                 };
             } else {
-                // 使用文本朗读作为备选
-                const voiceContent = document.querySelector('.voice-content');
-                const textToRead = voiceContent.textContent.replace(/\s+/g, ' ').trim();
-                
-                // 检查浏览器是否支持语音合成
-                if ('speechSynthesis' in window) {
-                    // 创建语音合成对象
-                    currentUtterance = new SpeechSynthesisUtterance(textToRead);
-                    
-                    // 设置语音属性
-                    currentUtterance.lang = 'zh-CN';
-                    currentUtterance.rate = 0.9; // 语速
-                    currentUtterance.pitch = 1.0; // 音调
-                    currentUtterance.volume = 1.0; // 音量
-                    
-                    // 显示朗读指示器
-                    readingIndicator.style.display = 'block';
-                    isReadingHistory = true;
-                    updateReadHistoryButton();
-                    isDucked = true;
-                    applyBgVolume();
-                    
-                    // 开始朗读
-                    speechSynthesis.speak(currentUtterance);
-                    
-                    // 朗读结束事件
-                    currentUtterance.onend = function() {
-                        stopReadingHistory();
+                // 优先尝试仓库内示例历史声音，失败则回退到 TTS
+                try {
+                    const sample = new Audio('history-voice.mp3');
+                    sample.oncanplaythrough = function() {
+                        uploadedHistoryAudio = sample;
+                        uploadedHistoryAudio.play();
+                        isReadingHistory = true;
+                        readingIndicator.style.display = 'block';
+                        updateReadHistoryButton();
+                        isDucked = true;
+                        applyBgVolume();
+                        uploadedHistoryAudio.onended = function() { stopReadingHistory(); };
                     };
-                    
-                    // 朗读错误事件
-                    currentUtterance.onerror = function(event) {
-                        console.error('朗读出错:', event);
-                        stopReadingHistory();
-                        alert('朗读功能出错，请尝试使用其他浏览器');
+                    sample.onerror = function() {
+                        fallbackReadHistoryWithTTS();
                     };
-                } else {
-                    alert('您的浏览器不支持文本朗读功能，请使用Chrome、Edge或Firefox等现代浏览器');
+                } catch (e) {
+                    fallbackReadHistoryWithTTS();
                 }
+            }
+        }
+
+        // TTS 备选实现
+        function fallbackReadHistoryWithTTS() {
+            const voiceContent = document.querySelector('.voice-content');
+            const textToRead = voiceContent.textContent.replace(/\s+/g, ' ').trim();
+            if ('speechSynthesis' in window) {
+                currentUtterance = new SpeechSynthesisUtterance(textToRead);
+                currentUtterance.lang = 'zh-CN';
+                currentUtterance.rate = 0.9;
+                currentUtterance.pitch = 1.0;
+                currentUtterance.volume = 1.0;
+                readingIndicator.style.display = 'block';
+                isReadingHistory = true;
+                updateReadHistoryButton();
+                isDucked = true;
+                applyBgVolume();
+                speechSynthesis.speak(currentUtterance);
+                currentUtterance.onend = function() { stopReadingHistory(); };
+                currentUtterance.onerror = function() { stopReadingHistory(); };
+            } else {
+                alert('您的浏览器不支持文本朗读功能，请使用Chrome、Edge或Firefox等现代浏览器');
             }
         }
         
