@@ -1,0 +1,9 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / tooling (为未来演进预留)
+node_modules/
+dist/
+.env
+*.log
