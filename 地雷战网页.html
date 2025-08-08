@@ -3,6 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AI赋能海阳地雷战：沉浸式党史学习网页，含历史声音再现、AI战争诗歌、互动卡片与本地音频播放。">
+    <meta property="og:title" content="AI赋能海阳地雷战 - 沉浸式体验">
+    <meta property="og:description" content="科技唤醒红色记忆：历史声音再现、AI诗歌与互动学习。">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="zh_CN">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
     <title>AI赋能海阳地雷战 - 沉浸式体验</title>
     <style>
         * {
@@ -728,6 +734,31 @@
             padding-top: 15px;
             border-top: 1px solid rgba(212, 160, 23, 0.3);
         }
+
+        /* 焦点可见性（键盘导航） */
+        .audio-btn:focus-visible,
+        .toggle-btn:focus-visible,
+        .poem-btn:focus-visible,
+        .team-button:focus-visible,
+        .upload-btn:focus-visible,
+        #play-bg:focus-visible,
+        #pause-bg:focus-visible {
+            outline: 3px dashed #d4a017;
+            outline-offset: 3px;
+        }
+
+        /* 音量控制区样式 */
+        .volume-controls {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: #f5d9b8;
+        }
+        .volume-slider {
+            width: 220px;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -756,8 +787,15 @@
             </div>
             
             <input type="file" id="bg-upload-input" accept="audio/*" style="display: none;">
-            <div class="audio-status" id="audio-status">
+            <div class="audio-status" id="audio-status" aria-live="polite" aria-atomic="true">
                 点击"播放背景音乐"按钮启动音乐
+            </div>
+            <div class="volume-controls" aria-label="背景音乐音量控制">
+                <button class="audio-btn" id="mute-bg" aria-pressed="false">
+                    <i class="fas fa-volume-mute" aria-hidden="true"></i> 静音
+                </button>
+                <input type="range" id="bg-volume" class="volume-slider" min="0" max="1" step="0.01" value="0.6" aria-label="背景音乐音量">
+                <span id="bg-volume-label">音量：60%</span>
             </div>
         </div>
         
@@ -886,7 +924,7 @@
                 <button class="read-btn" id="read-history-btn">
                     <i class="fas fa-volume-up"></i> 朗读历史声音
                 </button>
-                <div class="reading-indicator" id="reading-indicator">
+                <div class="reading-indicator" id="reading-indicator" role="status" aria-live="polite" aria-atomic="true">
                     正在朗读历史声音...
                 </div>
             </div>
@@ -910,7 +948,7 @@
                     </button>
                 </div>
                 
-                <div class="poem-status" id="poem-status">
+                <div class="poem-status" id="poem-status" aria-live="polite" aria-atomic="true">
                     诗歌朗读状态
                 </div>
             </div>
@@ -929,8 +967,8 @@
     </footer>
     
     <!-- 新增团队成员按钮 -->
-    <div class="team-button" id="team-button">
-        <i class="fas fa-users"></i>
+    <div class="team-button" id="team-button" role="button" tabindex="0" aria-label="打开或关闭项目团队信息">
+        <i class="fas fa-users" aria-hidden="true"></i>
     </div>
     
     <!-- 团队成员卡片 -->
@@ -982,8 +1020,11 @@
     <!-- 音频资源实现 -->
     <script>
         // 音频初始化
-        let bgAudio = null;
-        let bgAudioPlaying = false;
+    let bgAudio = null;
+    let bgAudioPlaying = false;
+    let bgBaseVolume = 0.6; // 用户设定音量
+    let isBgMuted = false;
+    let isDucked = false;   // 朗读时压低背景音量
         
         // DOM元素
         const audioStatus = document.getElementById('audio-status');
@@ -994,7 +1035,10 @@
         const readHistoryBtn = document.getElementById('read-history-btn');
         const readingIndicator = document.getElementById('reading-indicator');
         const readPoemBtn = document.getElementById('read-poem-btn');
-        const poemStatus = document.getElementById('poem-status');
+    const poemStatus = document.getElementById('poem-status');
+    const muteBgBtn = document.getElementById('mute-bg');
+    const bgVolumeSlider = document.getElementById('bg-volume');
+    const bgVolumeLabel = document.getElementById('bg-volume-label');
         
         // 朗读状态变量
         let isReadingHistory = false;
@@ -1007,7 +1051,7 @@
         const toggleBtn = document.getElementById('toggle-mine-btn');
         let currentMineIndex = 0;
         
-        function toggleMineDetail() {
+    function toggleMineDetail() {
             // 隐藏当前显示的地雷详情
             mineDetails.forEach(detail => detail.classList.remove('active'));
             
@@ -1030,13 +1074,13 @@
             bgUploadInput.click();
         });
         
-        bgUploadInput.addEventListener('change', function(e) {
+    bgUploadInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
                 // 创建新的音频对象
                 bgAudio = new Audio(URL.createObjectURL(file));
                 bgAudio.loop = true;
-                bgAudio.volume = 0.6;
+        applyBgVolume();
                 
                 audioStatus.textContent = "背景音乐已上传，点击播放按钮播放";
             }
@@ -1049,7 +1093,7 @@
                 bgAudio = new Audio();
                 bgAudio.src = 'https://cdn.jsdelivr.net/gh/webfronts/js-assets@main/mine-war-theme.mp3';
                 bgAudio.loop = true;
-                bgAudio.volume = 0.6;
+                applyBgVolume();
             }
             
             try {
@@ -1078,6 +1122,36 @@
         // 绑定按钮事件
         playBgBtn.addEventListener('click', playBackgroundMusic);
         pauseBgBtn.addEventListener('click', pauseBackgroundMusic);
+        // 背景音乐音量/静音
+        function applyBgVolume() {
+            if (!bgAudio) return;
+            let effective = isBgMuted ? 0 : bgBaseVolume;
+            if (isDucked) {
+                effective = isBgMuted ? 0 : Math.max(0, bgBaseVolume * 0.3);
+            }
+            bgAudio.volume = effective;
+        }
+        function updateBgVolumeLabel() {
+            bgVolumeLabel.textContent = `音量：${Math.round(bgBaseVolume * 100)}%`;
+        }
+        if (muteBgBtn && bgVolumeSlider) {
+            muteBgBtn.addEventListener('click', function() {
+                isBgMuted = !isBgMuted;
+                muteBgBtn.setAttribute('aria-pressed', String(isBgMuted));
+                muteBgBtn.innerHTML = isBgMuted
+                    ? '<i class="fas fa-volume-xmark" aria-hidden="true"></i> 取消静音'
+                    : '<i class="fas fa-volume-mute" aria-hidden="true"></i> 静音';
+                applyBgVolume();
+            });
+            bgVolumeSlider.addEventListener('input', function(e) {
+                const v = parseFloat(e.target.value);
+                if (!isNaN(v)) {
+                    bgBaseVolume = Math.min(1, Math.max(0, v));
+                    updateBgVolumeLabel();
+                    applyBgVolume();
+                }
+            });
+        }
         
         // 音频上传功能 - 历史声音
         const uploadAudioBtn = document.getElementById('upload-audio-btn');
@@ -1116,6 +1190,8 @@
                 isReadingHistory = true;
                 readingIndicator.style.display = 'block';
                 updateReadHistoryButton();
+                isDucked = true; // 朗读或播放时压低背景音乐
+                applyBgVolume();
                 
                 // 音频结束事件
                 uploadedHistoryAudio.onended = function() {
@@ -1141,6 +1217,8 @@
                     readingIndicator.style.display = 'block';
                     isReadingHistory = true;
                     updateReadHistoryButton();
+                    isDucked = true;
+                    applyBgVolume();
                     
                     // 开始朗读
                     speechSynthesis.speak(currentUtterance);
@@ -1176,6 +1254,10 @@
             readingIndicator.style.display = 'none';
             isReadingHistory = false;
             updateReadHistoryButton();
+            if (!isReadingPoem) {
+                isDucked = false;
+                applyBgVolume();
+            }
         }
         
         // 更新朗读历史声音按钮状态
@@ -1279,6 +1361,8 @@
                 poemStatus.textContent = "正在朗读诗歌...";
                 isReadingPoem = true;
                 updateReadPoemButton();
+                isDucked = true;
+                applyBgVolume();
                 
                 // 开始朗读
                 speechSynthesis.speak(currentUtterance);
@@ -1307,6 +1391,10 @@
             }
             isReadingPoem = false;
             updateReadPoemButton();
+            if (!isReadingHistory) {
+                isDucked = false;
+                applyBgVolume();
+            }
         }
         
         // 更新朗读诗歌按钮状态
@@ -1341,6 +1429,13 @@
         
         // 绑定按钮事件
         teamButton.addEventListener('click', toggleTeamCard);
+        // 键盘支持：Enter / Space 触发
+        teamButton.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleTeamCard();
+            }
+        });
         
         // 点击外部关闭卡片
         document.addEventListener('click', function(event) {
@@ -1356,6 +1451,11 @@
         window.addEventListener('DOMContentLoaded', function() {
             // 初始化状态
             poemStatus.textContent = "等待生成诗歌";
+            updateBgVolumeLabel();
+            // 将装饰性图标标记为 aria-hidden
+            document.querySelectorAll('i.fas, i.fa, i.far, i.fab').forEach(el => {
+                el.setAttribute('aria-hidden', 'true');
+            });
         });
     </script>
 </body>
